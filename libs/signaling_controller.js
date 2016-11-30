@@ -46,6 +46,8 @@ class SignalingController extends EventEmitter {
     this.ssgStore = ssgStore // store for Janus
     this.skyway = new Skyway({option:{peerid: this.my_peerid}}, ssgStore)
 
+    this.storedMessage = {};
+
     this.skyway.on("opened", ev => {
       this.setSkywayHandler()
       this.setJanusHandler()
@@ -58,15 +60,28 @@ class SignalingController extends EventEmitter {
    */
   setSkywayHandler() {
     this.skyway.on("receive/offer", (connection_id, offer, p2p_type) => {
+      console.log("receive/offer", connection_id)
+      console.log(offer)
       this.ssgStore.dispatch(requestCreateId(connection_id, {
         offer,
         p2p_type,
         plugin: "skywayiot",
         shouldBufferCandidates: true
       }))
+      setTimeout(() => {
+        if(this.storedMessage[connection_id]) {
+          this.storedMessage[connection_id].forEach(message => {
+            console.log("emit candidate", message)
+            this.skyway.emit("receive/candidate", connection_id, message)
+          })
+          this.storedMessage[connection_id] = undefined;
+        }    
+      }, 1000);
+
     })
 
     this.skyway.on("receive/answer", (connection_id, answer, p2p_type) => {
+      console.log("receive/answer", connection_id)
       this.ssgStore.dispatch(requestAnswer(connection_id, {
         answer,
         p2p_type,
@@ -75,9 +90,19 @@ class SignalingController extends EventEmitter {
     })
 
     this.skyway.on("receive/candidate", (connection_id, candidate) => {
+      console.log("receive/candidate", connection_id)
       // before receiveing LONGPOLLING_ANSWER, We buffer candidate
       let { connections } = this.ssgStore.getState().sessions
       let connection = connections[connection_id]
+
+      if(!connection) {
+        console.log("connection not found")
+        if(!this.storedMessage[connection_id]) {
+          this.storedMessage[connection_id] = [];
+        }
+        this.storedMessage[connection_id].push(candidate);
+        return;
+      }
 
 
       if(connection.shouldBufferCandidates) {
@@ -129,7 +154,10 @@ class SignalingController extends EventEmitter {
           this.skyway.sendOffer(connection_id, connection.offer, "media")
           break;
         case LONGPOLLING_ANSWER:
+          console.log(connection.answer)
           this.skyway.sendAnswer(connection_id, connection.answer, connection.p2p_type)
+          // this.skyway_voice.sendAnswer(connection_id, connection.answer, connection.p2p_type)
+
 
           // lift restriction to buffer candidates
           this.ssgStore.dispatch(setBufferCandidates(connection_id, false))
@@ -152,6 +180,7 @@ class SignalingController extends EventEmitter {
    * @param {string} src - peerid of client
    */
   startStreaming(handle_id, src) {
+    console.log("startStreaming")
     if(this.skyway.status !== "opened" ) {
       logger.error( "skyway is not opened" );
       return;
@@ -163,6 +192,8 @@ class SignalingController extends EventEmitter {
     // so we will use connection object in SkyWay connector, explicitly
     let client_peer_id = src
     let ssg_peer_id = this.my_peerid
+
+    console.log("client_peer_id", client_peer_id)
     
     this.ssgStore.dispatch(setPairOfPeerids(connection_id, client_peer_id, ssg_peer_id));
 
