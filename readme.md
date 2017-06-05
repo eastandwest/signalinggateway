@@ -1,3 +1,6 @@
+# This repository is deprecated. We moved to [new project site](https://github.com/nttcom/skyway-iot-sdk)
+
+
 # SSG - Skyway Signaling Gateway
 
 Signaling Gateway Server for Skyway and Janus Gateway
